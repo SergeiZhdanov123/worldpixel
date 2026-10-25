@@ -12,7 +12,7 @@ node server.js
 ```
 
 It needs a MongoDB connection string. Put settings in a `.env` file next to
-`server.js` (see `.env.example`) or in the environment:
+`server.js`, or in the environment (on Render, paste the `.env` lines into the Environment tab):
 
 | Variable | What it does |
 |---|---|
