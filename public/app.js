@@ -51,8 +51,7 @@ function setMe(me) {
 }
 
 // ---------------------------------------------------------------------
-// Flags. One image holds every flag in a grid; each country is painted
-// by stretching its flag over the box around its pixels.
+// Flags. One image holds every flag in a grid, and the map samples it.
 
 const OCEAN = [26, 140, 255];
 let flag = null; // { data, FW, FH, cols, width }
@@ -81,9 +80,9 @@ function flagHtml(code, w = 22) {
   return `<span class="flag" style="width:${w}px;height:${h}px;background-size:${flag.cols * w}px ${rows * h}px;background-position:-${(k % flag.cols) * w}px -${Math.floor(k / flag.cols) * h}px"></span>`;
 }
 
-// The flag box ignores the outer 2% of a country's pixels on each side,
-// so a far-off island doesn't squash the flag over the mainland. Across
-// the date line it starts after the widest empty gap of columns.
+// The box the map zooms to for "go to my country": the country's pixels
+// minus the outer 2% on each side, so far islands don't pull it wide.
+// Across the date line it starts after the widest empty gap of columns.
 function computeBox(c) {
   const { W, H } = S;
   const n = count[c];
@@ -134,23 +133,27 @@ function computeBox(c) {
   return old !== `${bx0[c]},${bw[c]},${by0[c]},${bh[c]}`;
 }
 
-function paint(i) {
+// Each separate piece of a country (a mainland, an island, a landing on
+// another continent) shows the whole flag stretched over its own box, so
+// France's mainland gets the full tricolour even though French Guiana and
+// Réunion are far away. A piece is pixels of one country joined by edges.
+let stamp, gen = 0; // stamp[i] === gen: already repainted in this pass
+let queue = new Int32Array(1 << 16);
+let colSeen; // scratch: which columns a piece covers
+let dirtyTop = Infinity, dirtyBottom = -1;
+
+function paintPixel(i, c, x0, w, y0, h) {
   const { W, H, owners } = S;
   const d = img.data, o = i * 4;
-  const c = owners[i];
-  if (!c) { d[o] = OCEAN[0]; d[o + 1] = OCEAN[1]; d[o + 2] = OCEAN[2]; d[o + 3] = 255; return; }
   const x = i % W, y = (i - x) / W;
-  const w = bw[c], h = bh[c];
-  let dx = x - bx0[c];
+  let dx = x - x0;
   if (dx < 0) dx += W;
-  if (dx >= w) dx = dx - w < W - dx ? w - 1 : 0;
-  let dy = y - by0[c];
-  if (dy < 0) dy = 0; else if (dy >= h) dy = h - 1;
+  if (dx >= w) dx = w - 1;
   const u = Math.floor(((dx + 0.5) * flag.FW) / w);
-  const v = Math.floor(((dy + 0.5) * flag.FH) / h);
+  const v = Math.floor(((Math.min(h - 1, Math.max(0, y - y0)) + 0.5) * flag.FH) / h);
   const k = c - 1;
   const f = ((Math.floor(k / flag.cols) * flag.FH + v) * flag.width + (k % flag.cols) * flag.FW + u) * 4;
-  // Edges are shaded: darker against another country, lighter touch on the coast.
+  // Edges are shaded: darker against another country, lighter on the coast.
   const l = owners[x ? i - 1 : i + W - 1], r = owners[x < W - 1 ? i + 1 : i - W + 1];
   const t = y ? owners[i - W] : c, btm = y < H - 1 ? owners[i + W] : c;
   let m = 1;
@@ -158,6 +161,94 @@ function paint(i) {
   else if (!l || !r || !t || !btm) m = 0.86;
   const fd = flag.data;
   d[o] = fd[f] * m; d[o + 1] = fd[f + 1] * m; d[o + 2] = fd[f + 2] * m; d[o + 3] = 255;
+}
+function paintWater(i) {
+  const d = img.data, o = i * 4;
+  d[o] = OCEAN[0]; d[o + 1] = OCEAN[1]; d[o + 2] = OCEAN[2]; d[o + 3] = 255;
+  const y = Math.floor(i / S.W);
+  dirtyTop = Math.min(dirtyTop, y); dirtyBottom = Math.max(dirtyBottom, y);
+}
+
+// Finds the piece containing seed and repaints it with its own flag box.
+function paintPiece(seed) {
+  const { W, H, owners } = S;
+  const N = W * H;
+  const c = owners[seed];
+  let n = 0, head = 0, top = H, bottom = -1;
+  queue[n++] = seed;
+  stamp[seed] = gen;
+  while (head < n) {
+    const i = queue[head++];
+    const x = i % W, y = (i - x) / W;
+    if (y < top) top = y;
+    if (y > bottom) bottom = y;
+    colSeen[x] = 1;
+    const a = x ? i - 1 : i + W - 1, b = x < W - 1 ? i + 1 : i - W + 1, u = i - W, dn = i + W;
+    for (const j of [a, b, u, dn]) {
+      if (j < 0 || j >= N || owners[j] !== c || stamp[j] === gen) continue;
+      stamp[j] = gen;
+      if (n === queue.length) { const q = new Int32Array(queue.length * 2); q.set(queue); queue = q; }
+      queue[n++] = j;
+    }
+  }
+  // Across the date line the box starts after the widest gap of columns.
+  // Walk the columns starting from one the piece covers, so a gap that
+  // runs over the map's edge is counted as one gap.
+  let x0 = 0, w = W;
+  let gapBest = 0, gapStart = -1, run = 0;
+  const s0 = seed % W;
+  for (let k = 1; k <= W; k++) {
+    const x = (s0 + k) % W;
+    if (!colSeen[x]) { if (!run) gapStart = x; run++; }
+    else { if (run > gapBest) { gapBest = run; x0 = (gapStart + run) % W; } run = 0; }
+  }
+  if (gapBest) w = W - gapBest;
+  for (let k = 0; k < n; k++) colSeen[queue[k] % W] = 0;
+  for (let k = 0; k < n; k++) paintPixel(queue[k], c, x0, w, top, bottom - top + 1);
+  dirtyTop = Math.min(dirtyTop, top); dirtyBottom = Math.max(dirtyBottom, bottom);
+}
+function nextGen() {
+  gen++;
+  if (gen === 65536) { stamp.fill(0); gen = 1; }
+}
+
+// Sea: bodies of water of at least SEA_MIN pixels (the same rule as the
+// server). A country with a coast can land on any coastline.
+const SEA_MIN = 5000;
+let coast, coastCount;
+function computeCoast() {
+  const { W, H, owners } = S;
+  const N = W * H;
+  const sea = new Uint8Array(N);
+  nextGen();
+  for (let s = 0; s < N; s++) {
+    if (owners[s] || stamp[s] === gen) continue;
+    let n = 0, head = 0;
+    queue[n++] = s;
+    stamp[s] = gen;
+    while (head < n) {
+      const i = queue[head++];
+      const x = i % W;
+      for (const j of [x ? i - 1 : i + W - 1, x < W - 1 ? i + 1 : i - W + 1, i - W, i + W]) {
+        if (j < 0 || j >= N || owners[j] || stamp[j] === gen) continue;
+        stamp[j] = gen;
+        if (n === queue.length) { const q = new Int32Array(queue.length * 2); q.set(queue); queue = q; }
+        queue[n++] = j;
+      }
+    }
+    if (n >= SEA_MIN) for (let k = 0; k < n; k++) sea[queue[k]] = 1;
+  }
+  coast = new Uint8Array(N);
+  coastCount = new Int32Array(S.countries.length + 1);
+  for (let i = 0; i < N; i++) {
+    const c = owners[i];
+    if (!c) continue;
+    const x = i % W;
+    if (sea[x ? i - 1 : i + W - 1] || sea[x < W - 1 ? i + 1 : i - W + 1] || (i >= W && sea[i - W]) || (i < N - W && sea[i + W])) {
+      coast[i] = 1;
+      coastCount[c]++;
+    }
+  }
 }
 
 function buildAll() {
@@ -179,14 +270,22 @@ function buildAll() {
     off.width = W; off.height = H;
     offCtx = off.getContext('2d');
     img = offCtx.createImageData(W, H);
+    stamp = new Uint16Array(W * H);
+    colSeen = new Uint8Array(W);
   }
-  for (let i = 0; i < W * H; i++) paint(i);
+  computeCoast();
+  nextGen();
+  for (let i = 0; i < W * H; i++) {
+    if (!owners[i]) paintWater(i);
+    else if (stamp[i] !== gen) paintPiece(i);
+  }
   offCtx.putImageData(img, 0, 0);
+  dirtyTop = Infinity; dirtyBottom = -1;
 }
 
 // Changes from the live feed and from our own clicks land here, and are
-// drawn on the next frame.
-const dirtyCountries = new Set();
+// drawn on the next frame: every piece touching a changed pixel is
+// repainted, since its shape (and so its flag box) or its border changed.
 let dirtyPixels = [];
 let flushQueued = false;
 function apply(i, c) {
@@ -195,39 +294,26 @@ function apply(i, c) {
   if (old === c) return;
   owners[i] = c;
   const x = i % W, y = (i - x) / W;
-  if (old) { count[old]--; hx[old * W + x]--; hy[old * H + y]--; }
-  if (c) { count[c]++; hx[c * W + x]++; hy[c * H + y]++; }
-  for (const k of [old, c]) if (k && computeBox(k)) dirtyCountries.add(k);
+  if (old) { count[old]--; hx[old * W + x]--; hy[old * H + y]--; coastCount[old] -= coast[i]; }
+  if (c) { count[c]++; hx[c * W + x]++; hy[c * H + y]++; coastCount[c] += coast[i]; }
+  for (const k of [old, c]) if (k) computeBox(k);
   dirtyPixels.push(i);
   boardDirty = true;
   if (!flushQueued) { flushQueued = true; requestAnimationFrame(flush); }
 }
 function flush() {
   flushQueued = false;
-  const { W, owners } = S;
-  let top = Infinity, bottom = -1;
-  for (const c of dirtyCountries) {
-    if (!count[c]) continue;
-    for (let y = fy0[c]; y <= fy1[c]; y++) {
-      for (let s = 0; s < fw[c]; s++) {
-        const i = y * W + ((fx0[c] + s) % W);
-        if (owners[i] === c) paint(i);
-      }
-    }
-    top = Math.min(top, fy0[c]); bottom = Math.max(bottom, fy1[c]);
-  }
-  dirtyCountries.clear();
-  const few = dirtyPixels.length <= 200;
+  const { owners } = S;
+  nextGen();
   for (const i of dirtyPixels) {
-    const x = i % W, y = (i - x) / W;
-    paint(i);
-    for (const j of neighbours(i)) paint(j);
-    if (few) offCtx.putImageData(img, 0, 0, Math.max(0, x - 1), Math.max(0, y - 1), 3, 3);
-    else { top = Math.min(top, y - 1); bottom = Math.max(bottom, y + 1); }
-    if (x === 0 || x === W - 1) { top = Math.min(top, y - 1); bottom = Math.max(bottom, y + 1); }
+    for (const j of [i, ...neighbours(i)]) {
+      if (!owners[j]) paintWater(j);
+      else if (stamp[j] !== gen) paintPiece(j);
+    }
   }
   dirtyPixels = [];
-  if (bottom >= 0) offCtx.putImageData(img, 0, 0, 0, Math.max(0, top), W, Math.min(S.H, bottom + 1) - Math.max(0, top));
+  if (dirtyBottom >= 0) offCtx.putImageData(img, 0, 0, 0, dirtyTop, S.W, dirtyBottom - dirtyTop + 1);
+  dirtyTop = Infinity; dirtyBottom = -1;
   requestDraw();
 }
 
@@ -252,9 +338,21 @@ function lastPixel(i) {
 }
 function canColor(i) {
   const id = myId();
-  if (!id || S.owners[i] === id || lastPixel(i)) return false;
-  if (count[id] === 0) { loadBase(); return S.base?.[i] === id; }
-  return touches(i, id);
+  const o = S.owners[i];
+  if (!id || !o || o === id || lastPixel(i)) return false;
+  if (touches(i, id)) return true;
+  if (count[id] === 0) { loadBase(); if (S.base?.[i] === id) return true; }
+  return !!coast[i] && coastCount[id] > 0;
+}
+function refusal(i) {
+  const id = myId();
+  const o = S.owners[i];
+  const name = S.countries[id - 1].name;
+  if (!o) return 'Water can\'t be colored. Land on a coast instead.';
+  if (o === id) return 'That pixel is already yours.';
+  if (lastPixel(i)) return `That is ${S.countries[o - 1].name}'s last pixel. Every country keeps at least one.`;
+  if (coast[i]) return `${name} has no coastline, so it can only grow over land that touches it.`;
+  return `You can only color land touching ${name}, or a coast anywhere.`;
 }
 
 // ---------------------------------------------------------------------
@@ -367,24 +465,30 @@ function draw() {
     ctx.stroke();
   }
 
-  // Where you can color: a dot on every pixel touching your country.
+  // Where you can color: a dot on land touching your country, a ring on
+  // coastline you can land on from the sea.
   const id = myId();
   if (id && s >= 3 && (gx1 - gx0) * (gy1 - gy0) < 500_000) {
     const r = Math.max(1.2, s * 0.16);
-    ctx.fillStyle = 'rgba(255,255,255,.9)';
-    ctx.strokeStyle = 'rgba(0,0,0,.35)';
-    ctx.beginPath();
+    const dots = new Path2D(), rings = new Path2D();
     for (let y = gy0; y < gy1; y++) {
       for (let x = gx0; x < gx1; x++) {
         const i = y * W + (((x % W) + W) % W);
-        if (S.owners[i] === id || !canColor(i)) continue;
+        if (!canColor(i)) continue;
         const X = (x + 0.5 - left) * s, Y = (y + 0.5 - top) * s;
-        ctx.moveTo(X + r, Y);
-        ctx.arc(X, Y, r, 0, Math.PI * 2);
+        const p = touches(i, id) ? dots : rings;
+        p.moveTo(X + r, Y);
+        p.arc(X, Y, r, 0, Math.PI * 2);
       }
     }
-    ctx.fill();
-    if (s >= 8) { ctx.lineWidth = 1; ctx.stroke(); }
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.strokeStyle = 'rgba(0,0,0,.35)';
+    ctx.lineWidth = 1;
+    ctx.fill(dots);
+    if (s >= 8) ctx.stroke(dots);
+    ctx.lineWidth = Math.max(1, s * 0.07);
+    ctx.strokeStyle = 'rgba(255,255,255,.85)';
+    ctx.stroke(rings);
   }
 
   if (hover.i >= 0 && hover.inside) {
@@ -487,6 +591,8 @@ addEventListener('keydown', (e) => {
   requestDraw();
 });
 addEventListener('resize', resize);
+// The top bar can wrap onto two lines on a phone; panels below it follow.
+new ResizeObserver(([e]) => document.documentElement.style.setProperty('--bar-h', `${Math.ceil(e.target.getBoundingClientRect().bottom)}px`)).observe($('.bar'));
 
 $('#zoomIn').onclick = () => zoomAt(vw / 2, vh / 2, 1.8);
 $('#zoomOut').onclick = () => zoomAt(vw / 2, vh / 2, 1 / 1.8);
@@ -542,9 +648,7 @@ async function clickAt(px, py) {
   if (!S.me) { openAuth('signup'); return; }
   if (!S.me.admin && S.me.free + S.me.paid <= 0) { toast('You are out of pixels. Wait for the next one, or buy more.', 'bad'); return; }
   const id = myId();
-  if (S.owners[i] === id) { toast('That pixel is already yours.'); return; }
-  if (lastPixel(i)) { toast(`That is ${S.countries[lastPixel(i) - 1].name}'s last pixel. Every country keeps at least one.`, 'bad'); return; }
-  if (!canColor(i)) { toast(`You can only color pixels touching ${S.countries[id - 1].name}.`, 'bad'); return; }
+  if (!canColor(i)) { toast(refusal(i), S.owners[i] === id ? '' : 'bad'); return; }
   if (placing) return;
   placing = true;
   apply(i, id);
@@ -575,7 +679,7 @@ function renderAccount() {
       <button class="chip" data-act="country" title="Change country">${flagHtml(c.code)}<span class="cname">${esc(c.name)}</span><span class="muted">▾</span></button>
       <div class="chip pixels" id="pixels"></div>
       <button class="btn" data-act="buy">Buy pixels</button>
-      <button class="chip" data-act="menu" title="Account">${esc(S.me.name)}</button>`;
+      <button class="chip user" data-act="menu" title="${esc(S.me.name)}"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="7" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 17c1-3.2 3.6-5 6.5-5s5.5 1.8 6.5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="uname">${esc(S.me.name)}</span></button>`;
     renderPixels();
   }
 }
@@ -625,7 +729,8 @@ function renderHint() {
   else if (!S.me.admin && S.me.free + S.me.paid <= 0) msg = 'Out of pixels. A new one comes every 5 minutes.';
   else if (view.s < 3) msg = `Zoom in on ${c.name} to color the pixels around it`;
   else if (!count[S.idOf.get(c.code)]) msg = `${c.name} has no pixels left. You can color anywhere in its original land.`;
-  else msg = 'White dots are pixels you can color';
+  else if (coastCount[S.idOf.get(c.code)]) msg = 'Dots: land touching you. Rings: coasts you can land on from the sea.';
+  else msg = 'Dots are land you can color. Reach the coast to land on other continents.';
   if (el.textContent !== msg) el.textContent = msg;
   el.hidden = !msg;
 }

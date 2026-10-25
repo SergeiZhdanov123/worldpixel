@@ -58,15 +58,27 @@ function client() {
   };
 }
 
-// An ocean pixel touching the given country, and a pixel nowhere near it.
+// Pixels around a country: another country's land touching it, inland
+// land far from it, coastline far from it, and water next to it.
 function spotsFor(code) {
   const w = app.world;
   const id = w.idOf.get(code);
-  let touching = -1;
-  for (let i = 0; i < w.grid.length && touching < 0; i++) if (w.grid[i] === 0 && w.borders(id, i)) touching = i;
-  let far = -1;
-  for (let i = 0; i < w.grid.length && far < 0; i++) if (w.grid[i] !== id && !w.borders(id, i) && w.base[i] !== id) far = i;
-  return { id, touching, far };
+  let touching = -1, far = -1, coastFar = -1, water = -1;
+  for (let i = 0; i < w.grid.length; i++) {
+    const o = w.grid[i];
+    if (!o) { if (water < 0 && w.borders(id, i)) water = i; continue; }
+    if (o === id || w.count[o] <= 1) continue;
+    if (w.borders(id, i)) { if (touching < 0) touching = i; }
+    else if (w.coast[i]) { if (coastFar < 0) coastFar = i; }
+    else if (far < 0 && w.base[i] !== id) far = i;
+    if (touching >= 0 && far >= 0 && coastFar >= 0 && water >= 0) break;
+  }
+  return { id, touching, far, coastFar, water };
+}
+// Somewhere the country can color next, near i if possible.
+function nextTo(id, i) {
+  const w = app.world;
+  return w.neighbours(i).find((j) => w.refuse(id, j) === null) ?? spotsFor(w.countries[id - 1].code).touching;
 }
 
 test('sign up gives 5 pixels; names are unique ignoring case', async () => {
@@ -122,13 +134,13 @@ test('one free pixel every 5 minutes, stored up to 10', async () => {
 
 test('you can only color pixels touching your country', async () => {
   const e = client();
-  await e('/api/signup', { username: 'erin', password: 'erin password', country: 'IS' });
-  const { id, touching, far } = spotsFor('IS');
+  await e('/api/signup', { username: 'erin', password: 'erin password', country: 'PT' });
+  const { id, touching, far } = spotsFor('PT');
   const before = app.world.count[id];
 
   const no = await e('/api/place', { i: far });
   assert.equal(no.status, 400);
-  assert.match(no.data.error, /touch Iceland/);
+  assert.match(no.data.error, /touching Portugal/);
   assert.equal(no.data.me.free, 5);
 
   const yes = await e('/api/place', { i: touching });
@@ -144,16 +156,16 @@ test('you can only color pixels touching your country', async () => {
 
   await app.save();
   const info = await e(`/api/pixel?i=${touching}`);
-  assert.deepEqual([info.data.country, info.data.original, info.data.by], ['IS', null, 'erin']);
+  assert.deepEqual([info.data.country, info.data.original, info.data.by], ['PT', 'ES', 'erin']);
 
   // Spend the rest, then run out.
   let i = touching;
   for (let k = 0; k < 4; k++) {
-    i = app.world.neighbours(i).find((j) => app.world.grid[j] !== id);
+    i = nextTo(id, i);
     const r = await e('/api/place', { i });
     assert.equal(r.status, 200, r.data.error);
   }
-  const out = await e('/api/place', { i: app.world.neighbours(i).find((j) => app.world.grid[j] !== id) });
+  const out = await e('/api/place', { i: nextTo(id, i) });
   assert.equal(out.status, 400);
   assert.match(out.data.error, /out of pixels/);
 });
@@ -167,6 +179,26 @@ test('switching country changes who your pixels go to', async () => {
   assert.equal((await f('/api/place', { i: touching })).status, 200);
   assert.equal(app.world.grid[touching], id);
   assert.equal((await client()('/api/country', { country: 'SE' })).status, 401);
+});
+
+test('water can\'t be colored; coasts can be landed on from the sea', async () => {
+  const s = client();
+  await s('/api/signup', { username: 'sven', password: 'sven password', country: 'NO' });
+  const { id, water, coastFar } = spotsFor('NO');
+  const wet = await s('/api/place', { i: water });
+  assert.equal(wet.status, 400);
+  assert.match(wet.data.error, /Water/);
+  const landing = await s('/api/place', { i: coastFar });
+  assert.equal(landing.status, 200, landing.data.error);
+  assert.equal(app.world.grid[coastFar], id);
+
+  // Switzerland has no coast, so it can't.
+  const c = client();
+  await c('/api/signup', { username: 'heidi', password: 'heidi password', country: 'CH' });
+  const other = spotsFor('CH').coastFar;
+  const no = await c('/api/place', { i: other });
+  assert.equal(no.status, 400);
+  assert.match(no.data.error, /no coastline/);
 });
 
 test('a country\'s last pixel can\'t be taken', async () => {
@@ -292,8 +324,8 @@ test('the map and the live feed', async () => {
   assert.ok(seq > 0);
 
   const n = client();
-  await n('/api/signup', { username: 'nina', password: 'nina password', country: 'JP' });
-  const { touching } = spotsFor('JP');
+  await n('/api/signup', { username: 'nina', password: 'nina password', country: 'KR' });
+  const { touching } = spotsFor('KR');
   await n('/api/place', { i: touching });
   await new Promise((r) => setTimeout(r, 300));
 
@@ -306,7 +338,7 @@ test('the map and the live feed', async () => {
   const msg = JSON.parse(/data: (\{"s".*\})/.exec(text)[1]);
   const pairs = [];
   for (let k = 0; k < msg.p.length; k += 2) pairs.push([msg.p[k], msg.p[k + 1]]);
-  assert.deepEqual(pairs.at(-1), [touching, app.world.idOf.get('JP')]);
+  assert.deepEqual(pairs.at(-1), [touching, app.world.idOf.get('KR')]);
 
   const countries = await (await fetch(`${base}/countries.json`)).json();
   assert.equal(countries.countries.length, app.world.countries.length);
@@ -349,7 +381,7 @@ test('admins have unlimited pixels and can see the stats', async () => {
   for (let k = 0; k < 25; k++) {
     const p = await boss('/api/place', { i });
     assert.equal(p.status, 200, p.data.error);
-    i = app.world.neighbours(i).find((j) => app.world.grid[j] !== id) ?? app.world.grid.findIndex((v, j) => v !== id && app.world.borders(id, j));
+    i = nextTo(id, i);
   }
   assert.equal((await boss('/api/me')).data.me.free, freeBefore, 'admin pixels are not used up');
 
@@ -375,20 +407,23 @@ test('banning: locked out, and their pixels can be undone', async () => {
   await boss('/api/login', { username: 'boss', password: 'boss password' });
   const v = client();
   await v('/api/signup', { username: 'vandal', password: 'vandal password', country: 'NZ' });
-  const nz = app.world.idOf.get('NZ');
-  // Two ocean pixels off New Zealand.
-  const { touching } = spotsFor('NZ');
-  await v('/api/place', { i: touching });
-  const next = app.world.neighbours(touching).find((j) => app.world.grid[j] === 0);
-  await v('/api/place', { i: next });
-  assert.equal(app.world.grid[next], nz);
+  const w = app.world;
+  const nz = w.idOf.get('NZ');
+  // New Zealand has no land border: land on a coast, then grow inland.
+  const touching = spotsFor('NZ').coastFar;
+  const was = w.grid[touching];
+  assert.equal((await v('/api/place', { i: touching })).status, 200);
+  const next = nextTo(nz, touching);
+  const wasNext = w.grid[next];
+  assert.equal((await v('/api/place', { i: next })).status, 200);
+  assert.equal(w.grid[next], nz);
 
   assert.equal((await boss('/api/admin/ban', { username: 'boss' })).status, 400, 'admins can\'t be banned');
   const ban = await boss('/api/admin/ban', { username: 'VANDAL', undo: true });
   assert.equal(ban.status, 200, ban.data.error);
   assert.equal(ban.data.undone, 2);
-  assert.equal(app.world.grid[touching], 0);
-  assert.equal(app.world.grid[next], 0);
+  assert.equal(w.grid[touching], was, 'given back to whoever had it');
+  assert.equal(w.grid[next], wasNext);
 
   assert.equal((await v('/api/me')).data.me, null, 'their session is gone');
   assert.equal((await v('/api/place', { i: touching })).status, 401);
