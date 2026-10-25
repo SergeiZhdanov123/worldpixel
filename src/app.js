@@ -359,6 +359,7 @@ export async function createApp({
       for (const [i, list] of history) {
         const last = list.at(-1);
         if (last.uid !== u._id || world.grid[i] !== last.c) continue; // someone has colored over it since
+        if (world.count[last.c] <= 1) continue; // every country keeps one pixel
         const before = list.findLast((p) => p.uid !== u._id && p.uid !== 0);
         const c = before ? before.c : world.base[i];
         if (c === world.grid[i]) continue;

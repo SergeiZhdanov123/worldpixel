@@ -47,7 +47,7 @@ colored.
 - You start with 5 pixels and get 1 more every 5 minutes, stored up to 10.
 - You can color any pixel (land, ocean or someone else's country) that shares
   an edge with your country. The map wraps at the date line.
-- A country that loses every pixel can restart anywhere on its original land.
+- Every country keeps at least one pixel: a country's last pixel can't be taken.
 - Bought with Bitcoin: 6 pixels for $5, 15 for $10, 40 for $20, 180 for $50.
   Bought pixels never expire and sit on top of the 10-pixel storage. Free
   pixels are spent first.

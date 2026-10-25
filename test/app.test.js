@@ -169,6 +169,21 @@ test('switching country changes who your pixels go to', async () => {
   assert.equal((await client()('/api/country', { country: 'SE' })).status, 401);
 });
 
+test('a country\'s last pixel can\'t be taken', async () => {
+  const w = app.world;
+  const va = w.idOf.get('VA'); // Vatican: one pixel, inside Italy
+  const i = w.grid.indexOf(va);
+  assert.equal(w.count[va], 1);
+  const it = client();
+  await it('/api/signup', { username: 'italo', password: 'italo password', country: 'IT' });
+  assert.ok(w.borders(w.idOf.get('IT'), i));
+  const r = await it('/api/place', { i });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /Vatican's last pixel/);
+  assert.equal(w.grid[i], va);
+  assert.equal(r.data.me.free, 5, 'no pixel spent');
+});
+
 test('a country wiped off the map can restart on its own land', () => {
   const w = app.world;
   const id = w.idOf.get('VA'); // Vatican: one pixel

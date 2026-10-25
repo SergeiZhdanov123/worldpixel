@@ -38,11 +38,14 @@ export class World {
 
   borders(id, i) { return this.neighbours(i).some((j) => this.grid[j] === id); }
 
-  // Why a country can't take pixel i, or null if it can. A country that
-  // has lost every pixel may start again anywhere on its original land.
+  // Why a country can't take pixel i, or null if it can. Every country
+  // keeps at least one pixel: its last one can't be taken. (A country
+  // with none, from an older map, may start again on its original land.)
   refuse(id, i) {
     if (!this.inBounds(i)) return 'That pixel is off the map.';
-    if (this.grid[i] === id) return 'That pixel is already yours.';
+    const owner = this.grid[i];
+    if (owner === id) return 'That pixel is already yours.';
+    if (owner && this.count[owner] <= 1) return `That is ${this.countries[owner - 1].name}'s last pixel. Every country keeps at least one.`;
     if (this.borders(id, i)) return null;
     if (this.count[id] === 0 && this.base[i] === id) return null;
     return `You can only color pixels that touch ${this.countries[id - 1].name}.`;

@@ -245,9 +245,14 @@ function touches(i, id) {
   return owners[x ? i - 1 : i + W - 1] === id || owners[x < W - 1 ? i + 1 : i - W + 1] === id
     || (i >= W && owners[i - W] === id) || (i < W * (H - 1) && owners[i + W] === id);
 }
+// Mirrors World.refuse on the server.
+function lastPixel(i) {
+  const owner = S.owners[i];
+  return owner && count[owner] <= 1 ? owner : 0;
+}
 function canColor(i) {
   const id = myId();
-  if (!id || S.owners[i] === id) return false;
+  if (!id || S.owners[i] === id || lastPixel(i)) return false;
   if (count[id] === 0) { loadBase(); return S.base?.[i] === id; }
   return touches(i, id);
 }
@@ -538,6 +543,7 @@ async function clickAt(px, py) {
   if (!S.me.admin && S.me.free + S.me.paid <= 0) { toast('You are out of pixels. Wait for the next one, or buy more.', 'bad'); return; }
   const id = myId();
   if (S.owners[i] === id) { toast('That pixel is already yours.'); return; }
+  if (lastPixel(i)) { toast(`That is ${S.countries[lastPixel(i) - 1].name}'s last pixel. Every country keeps at least one.`, 'bad'); return; }
   if (!canColor(i)) { toast(`You can only color pixels touching ${S.countries[id - 1].name}.`, 'bad'); return; }
   if (placing) return;
   placing = true;
