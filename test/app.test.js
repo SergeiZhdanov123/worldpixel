@@ -257,6 +257,17 @@ test('storage upgrade raises the cap to 100, once', async () => {
   assert.equal(again.status, 400);
 });
 
+test('addresses that already have payments are never handed out', async () => {
+  const q = client();
+  await q('/api/signup', { username: 'quinn', password: 'quinn password', country: 'CL' });
+  const { nextAddressIndex: next } = await app.store.col.meta.findOne({ _id: 'meta' });
+  payments.set(btc.wallet.address(next), [{ txid: 'old1', sats: 50_000, height: 800_000 }]);
+  payments.set(btc.wallet.address(next + 1), [{ txid: 'old2', sats: 1, height: null }]);
+  const inv = (await q('/api/buy', { pack: 'p6' })).data.invoice;
+  assert.equal(inv.address, btc.wallet.address(next + 2));
+  assert.equal(inv.status, 'open');
+});
+
 test('an expired quote still pays out when the bitcoin arrives late', async () => {
   const m = client();
   await m('/api/signup', { username: 'moe', password: 'moe password', country: 'EG' });

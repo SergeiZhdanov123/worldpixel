@@ -117,6 +117,9 @@ export async function openStore({ uri, dbName, width, height, base, log = consol
     col,
     // Counters are saved before they're used, so an address or user id
     // is never handed out twice, even across a crash.
+    // Never hand out a counter value below n (e.g. addresses another
+    // site already used from the same wallet).
+    async atLeast(name, n) { await col.meta.updateOne({ _id: 'meta' }, { $max: { [name]: n } }); },
     async next(name) {
       const r = await col.meta.findOneAndUpdate({ _id: 'meta' }, { $inc: { [name]: 1 } }, { returnDocument: 'before' });
       return r[name];

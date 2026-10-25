@@ -90,6 +90,7 @@ export async function createApp({
 } = {}) {
   const map = loadBaseMap(mapDir);
   const store = await openStore({ uri: mongoUri, dbName, width: map.width, height: map.height, base: map.base, log });
+  if (btc?.startIndex) await store.atLeast('nextAddressIndex', btc.startIndex);
   const world = new World(map, store.grid);
   const usersById = new Map(store.users.map((u) => [u._id, u]));
   const usersByName = new Map(store.users.map((u) => [u.nameLower, u]));
@@ -504,11 +505,22 @@ export async function createApp({
       if (mine.length >= 3) throw new HttpError(429, 'You already have 3 payments waiting. Finish or let one expire first.');
       let usd;
       try { usd = await btc.price.get(); } catch { throw new HttpError(503, 'Could not get the bitcoin price right now. Try again in a minute.'); }
-      const index = await store.next('nextAddressIndex');
+      // A fresh address with no history, so an old payment to the same
+      // wallet can never count toward this one.
+      let index, address;
+      for (let tries = 0; ; tries++) {
+        index = await store.next('nextAddressIndex');
+        address = btc.wallet.address(index);
+        let seen;
+        try { seen = await btc.esplora.received(address); } catch { throw new HttpError(503, 'Could not reach the Bitcoin network right now. Try again in a minute.'); }
+        if (!seen.length) break;
+        log.warn?.(`skipping bitcoin address #${index}: it already has payments`);
+        if (tries >= 20) throw new HttpError(503, 'Could not find a fresh payment address. Try again later.');
+      }
       const inv = {
         _id: randomBytes(6).toString('hex'), uid: u._id, pack, usd: PACKS[pack].usd,
         sats: Math.ceil((PACKS[pack].usd / usd) * 1e8), price: usd,
-        address: btc.wallet.address(index), index,
+        address, index,
         createdAt: t, expiresAt: t + QUOTE_MS, status: 'open', received: 0, pending: 0, txids: [],
       };
       await store.insertInvoice(inv);

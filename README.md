@@ -22,6 +22,7 @@ It needs a MongoDB connection string. Put settings in a `.env` file next to
 | `BTC_XPUB` | Your Bitcoin wallet's master public key (zpub/xpub/ypub). Without it, buying is switched off. |
 | `BTC_CONFIRMATIONS` | Confirmations before pixels are credited. Default 1. |
 | `BTC_POLL_SECONDS` | How often payments are checked. Default 30. |
+| `BTC_START_INDEX` | First wallet address number to hand out. Use it when the wallet has been used elsewhere, to start past those addresses. Addresses that already have payments are skipped anyway. |
 | `TRUST_PROXY` | Set to `1` on Render (or behind any one proxy) so rate limits see real visitor addresses. |
 | `ESPLORA_URLS`, `BTC_PRICE_URLS` | Override the block explorers and price sources (comma separated). |
 

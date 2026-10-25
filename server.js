@@ -36,8 +36,9 @@ if (env.BTC_XPUB) {
     price: btcPrice((env.BTC_PRICE_URLS || 'https://mempool.space/api/v1/prices,https://api.coinbase.com/v2/prices/BTC-USD/spot').split(',').map((s) => s.trim())),
     confirmations: Math.max(0, Number(env.BTC_CONFIRMATIONS ?? 1)),
     pollMs: Math.max(5, Number(env.BTC_POLL_SECONDS ?? 30)) * 1000,
+    startIndex: Math.max(0, Number(env.BTC_START_INDEX || 0)),
   };
-  console.log(`Bitcoin payments on (${wallet.net}net). First address: ${wallet.address(0)}`);
+  console.log(`Bitcoin payments on (${wallet.net}net). Address #0 of this wallet: ${wallet.address(0)}`);
   console.log('  Check that it matches the first receiving address in your wallet.');
 } else {
   console.log('Bitcoin payments off: set BTC_XPUB to your wallet\'s master public key to sell pixels.');
