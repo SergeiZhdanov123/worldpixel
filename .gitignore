@@ -1,0 +1,5 @@
+node_modules/
+data/
+.env
+business-plan.md
+.DS_Store
