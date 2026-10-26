@@ -715,7 +715,7 @@ function renderPixels() {
   } else {
     timer = `<span class="label">Storage full · ${m.cap}/${m.cap}</span>`;
   }
-  el.title = `Free pixels: ${m.free} of ${m.cap} (one every 5 minutes)\nBought pixels: ${m.paid}`;
+  el.title = `Free pixels: ${m.free} of ${m.cap} (one every minute)\nBought pixels: ${m.paid}`;
   el.innerHTML = `<b class="num">${total}</b><span class="of">pixel${total === 1 ? '' : 's'}</span>${m.paid ? `<span class="bonus num">${m.paid} bought</span>` : ''}<span class="timer">${timer}</span>`;
 }
 setInterval(renderPixels, 1000);
@@ -726,7 +726,7 @@ function renderHint() {
   let msg = '';
   const c = S.me ? S.countries[S.idOf.get(S.me.country) - 1] : null;
   if (!S.me) msg = 'Sign up and pick a country to start coloring the map';
-  else if (!S.me.admin && S.me.free + S.me.paid <= 0) msg = 'Out of pixels. A new one comes every 5 minutes.';
+  else if (!S.me.admin && S.me.free + S.me.paid <= 0) msg = 'Out of pixels. A new one comes every minute.';
   else if (view.s < 3) msg = `Zoom in on ${c.name} to color the pixels around it`;
   else if (!count[S.idOf.get(c.code)]) msg = `${c.name} has no pixels left. You can color anywhere in its original land.`;
   else if (coastCount[S.idOf.get(c.code)]) msg = 'Dots: land touching you. Rings: coasts you can land on from the sea.';
@@ -828,7 +828,7 @@ function openAuth(mode) {
       ${mode === 'signup' ? '<div class="field"><span class="small" style="display:block;font-weight:600;color:var(--ink-2);margin-bottom:5px">Your country</span><div class="picker" id="authPicker"></div></div>' : ''}
       <p class="err" id="authErr"></p>
       <button class="btn wide" type="submit">${mode === 'signup' ? 'Create account' : 'Log in'}</button>
-      ${mode === 'signup' ? `<p class="note">You start with ${S.cfg.rules.startPixels} pixels and get one more every 5 minutes, up to ${S.cfg.rules.cap}. You can switch country later.</p>` : ''}
+      ${mode === 'signup' ? `<p class="note">You start with ${S.cfg.rules.startPixels} pixels and get one more every minute, up to ${S.cfg.rules.cap}. You can switch country later.</p>` : ''}
     </form>`);
   body.querySelector('.tabs').addEventListener('click', (e) => {
     const m = e.target.closest('[data-mode]')?.dataset.mode;
@@ -910,7 +910,7 @@ async function openBuy() {
       <b class="num">${p.pixels}</b><span class="unit">pixels</span><span class="price">$${p.usd}</span><span class="each">$${(p.usd / p.pixels).toFixed(2)} each</span></button>`).join('')}</div>
     <button class="storage" data-pack="${storage.key}" ${disabled || hasBig ? 'disabled' : ''}>
       <span class="big num">${S.cfg.rules.cap} → ${storage.cap}</span>
-      <span class="what"><strong>${hasBig ? 'Storage upgraded' : 'Bigger storage'}</strong>Free pixels keep piling up to ${storage.cap} instead of ${S.cfg.rules.cap}, so you can be away for over 8 hours and lose nothing.</span>
+      <span class="what"><strong>${hasBig ? 'Storage upgraded' : 'Bigger storage'}</strong>Free pixels keep piling up to ${storage.cap} instead of ${S.cfg.rules.cap}, so you can be away for over an hour and a half and lose nothing.</span>
       <span class="price">${hasBig ? '✓' : `$${storage.usd}`}</span>
     </button>
     ${disabled ? '<p class="note">Buying isn\'t switched on yet on this server.</p>' : '<p class="note">You get a Bitcoin address and amount to send from any wallet. Pixels arrive after one network confirmation, usually 10 to 30 minutes.</p>'}

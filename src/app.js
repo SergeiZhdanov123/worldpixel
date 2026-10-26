@@ -15,7 +15,7 @@ const gzip = promisify(gzipCb);
 
 export const RULES = {
   startPixels: 5,
-  regenMs: 5 * 60_000,
+  regenMs: 60_000,
   cap: 10,
   bigCap: 100,
 };
@@ -98,7 +98,7 @@ export async function createApp({
   const invoices = store.invoices;
 
   // ---- pixels on hand -------------------------------------------------
-  // Free pixels grow by one every five minutes up to the storage cap.
+  // Free pixels grow by one every minute up to the storage cap.
   // Bought pixels sit on top of that and never expire; free ones are
   // spent first so the timer keeps running. Admins have no limit.
   function settle(u) {
@@ -573,6 +573,7 @@ export async function createApp({
   async function serveStatic(req, res, path) {
     if (path === '/') path = '/index.html';
     if (path === '/admin') path = '/admin.html';
+    if (['/terms', '/privacy', '/purchases', '/rules'].includes(path)) path += '.html';
     let file;
     if (path === '/countries.json' || path === '/world.bin.gz') file = join(mapDir, path.slice(1));
     else {

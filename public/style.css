@@ -96,9 +96,14 @@ button.chip:hover { background: var(--soft); }
 .down { color: var(--warn); }
 .board .sep { height: 1px; background: var(--line); margin: 4px 8px; }
 
+/* Legal links, bottom-left under the hover card */
+.legal-links { position: fixed; left: 12px; bottom: 8px; z-index: 4; display: flex; gap: 10px; font-size: 11px; line-height: 1; }
+.legal-links a { color: rgba(255, 255, 255, .78); text-decoration: none; text-shadow: 0 1px 2px rgba(0, 20, 60, .5); }
+.legal-links a:hover { color: #fff; text-decoration: underline; }
+
 /* Hover card */
 .hover {
-  position: fixed; left: 12px; bottom: 12px; z-index: 4; min-width: 220px; max-width: calc(100vw - 90px);
+  position: fixed; left: 12px; bottom: 28px; z-index: 4; min-width: 220px; max-width: calc(100vw - 90px);
   padding: 10px 12px; background: var(--panel); border-radius: var(--r); box-shadow: var(--shadow);
   pointer-events: none;
 }
@@ -210,15 +215,42 @@ input:focus { border-color: var(--ocean); box-shadow: 0 0 0 3px rgba(26, 140, 25
   .chip.user .uname { display: none; }
   .bar-right { gap: 6px; }
   .board ol { max-height: 34vh; }
-  .hover { left: 8px; bottom: 8px; min-width: 0; max-width: calc(100vw - 70px); }
+  .legal-links { left: 8px; bottom: 6px; gap: 9px; }
+  .hover { left: 8px; bottom: 24px; min-width: 0; max-width: calc(100vw - 70px); }
   .zoom { right: 8px; bottom: 8px; }
-  .hint { left: 8px; bottom: 8px; transform: none; white-space: normal; max-width: calc(100vw - 72px); }
+  .hint { left: 8px; bottom: 24px; transform: none; white-space: normal; max-width: calc(100vw - 72px); }
   .packs { grid-template-columns: repeat(2, 1fr); }
   .invoice { grid-template-columns: 1fr; justify-items: center; }
   .invoice > div { width: 100%; }
 }
 
 a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+
+/* Legal pages */
+html.legal, html.legal body { height: auto; overflow: auto; background: var(--soft); }
+.legal-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  max-width: 760px; margin: 0 auto; padding: 18px 16px 0;
+}
+.legal-head .brand .word { display: inline; }
+.legal-head .brand { box-shadow: none; background: none; padding-left: 0; color: var(--ink); text-decoration: none; }
+.legal-head nav { display: flex; gap: 14px; font-size: 13px; flex-wrap: wrap; }
+.legal-head nav a { color: var(--ink-2); text-decoration: none; }
+.legal-head nav a:hover, .legal-head nav a[aria-current] { color: var(--ink); text-decoration: underline; }
+.doc { max-width: 760px; margin: 16px auto 60px; padding: 28px 32px 32px; background: #fff; border: 1px solid var(--line); border-radius: var(--r); font-size: 15px; line-height: 1.6; }
+.doc h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -.02em; }
+.doc .date { margin: 0 0 20px; color: var(--ink-3); font-size: 13px; }
+.doc h2 { margin: 28px 0 6px; font-size: 17px; }
+.doc p, .doc ul { margin: 0 0 12px; }
+.doc ul { padding-left: 20px; }
+.doc li { margin-bottom: 4px; }
+.doc a { color: var(--deep); }
+.doc table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 0 0 12px; }
+.doc th, .doc td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.doc th { font-size: 13px; color: var(--ink-3); font-weight: 600; }
+@media (max-width: 720px) {
+  .doc { margin: 12px 8px 40px; padding: 20px 16px; font-size: 14.5px; }
+}
 
 /* Admin page */
 html.admin, html.admin body { height: auto; overflow: auto; background: var(--soft); }

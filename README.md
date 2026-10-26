@@ -45,14 +45,21 @@ colored.
 ## The rules
 
 - Sign up with a username and password and pick a country. You can switch later.
-- You start with 5 pixels and get 1 more every 5 minutes, stored up to 10.
-- You can color any pixel (land, ocean or someone else's country) that shares
-  an edge with your country. The map wraps at the date line.
+- You start with 5 pixels and get 1 more every minute, stored up to 10.
+- Water can't be colored. You can color any land (empty or someone else's
+  country) that shares an edge with your country. The map wraps at the date line.
+- If your country has a coastline you can also land on any other country's
+  coastline, which is how you reach other continents.
 - Every country keeps at least one pixel: a country's last pixel can't be taken.
 - Bought with Bitcoin: 6 pixels for $5, 15 for $10, 40 for $20, 180 for $50.
   Bought pixels never expire and sit on top of the 10-pixel storage. Free
   pixels are spent first.
 - Storage upgrade, $10: free pixels pile up to 100 instead of 10.
+
+## Legal pages
+
+`/terms`, `/privacy`, `/purchases` and `/rules` are static pages in `public/`,
+linked small in the bottom-left corner of the map.
 
 ## Payments
 

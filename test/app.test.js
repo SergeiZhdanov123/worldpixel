@@ -111,7 +111,7 @@ test('wrong passwords lock the account for 15 minutes', async () => {
   assert.equal(ok.data.me.name, 'carol');
 });
 
-test('one free pixel every 5 minutes, stored up to 10', async () => {
+test('one free pixel every minute, stored up to 10', async () => {
   const d = client();
   await d('/api/signup', { username: 'dave', password: 'dave password', country: 'DE' });
   clock += RULES.regenMs - 1;
