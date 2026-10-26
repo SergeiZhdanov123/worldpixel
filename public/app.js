@@ -1,6 +1,8 @@
 // WorldPixel in the browser: draws the map from the server's pixel grid,
 // paints each country with its flag stretched over its current shape, and
 // handles signing up, coloring pixels and buying more.
+import { sound } from '/sound.js';
+
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const fmt = (n) => Number(n).toLocaleString('en-US');
@@ -17,12 +19,20 @@ async function api(path, body) {
   return data;
 }
 
+// The same message again just restarts its timer, and at most two show at
+// once, so tapping fast can't bury the map in messages.
 function toast(msg, kind = '') {
-  const el = document.createElement('div');
-  el.className = `toast ${kind}`;
-  el.textContent = msg;
-  $('#toasts').append(el);
-  setTimeout(() => el.remove(), kind === 'bad' ? 3800 : 3000);
+  const box = $('#toasts');
+  let el = [...box.children].find((t) => t.textContent === msg);
+  if (!el) {
+    el = document.createElement('div');
+    el.className = `toast ${kind}`;
+    el.textContent = msg;
+    box.append(el);
+    while (box.children.length > 2) box.firstElementChild.remove();
+  }
+  clearTimeout(el.timer);
+  el.timer = setTimeout(() => el.remove(), kind === 'bad' ? 3800 : 3000);
 }
 
 // ---------------------------------------------------------------------
@@ -523,6 +533,7 @@ const pointers = new Map();
 let drag = null;
 
 canvas.addEventListener('pointerdown', (e) => {
+  if (isPhone()) showBoard(false);
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   cancelAnimationFrame(anim);
@@ -569,6 +580,9 @@ function endPointer(e) {
   }
 }
 canvas.addEventListener('pointerup', endPointer);
+// Without this, a phone sends a click after the tap, which can land on a
+// dialog the tap just opened.
+canvas.addEventListener('touchend', (e) => e.preventDefault(), { passive: false });
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { hover.inside = false; $('#hover').hidden = true; requestDraw(); } });
 canvas.addEventListener('wheel', (e) => {
@@ -598,6 +612,21 @@ $('#zoomIn').onclick = () => zoomAt(vw / 2, vh / 2, 1.8);
 $('#zoomOut').onclick = () => zoomAt(vw / 2, vh / 2, 1 / 1.8);
 $('#zoomHome').onclick = home;
 $('#zoomMine').onclick = () => S.me && flyToCountry(S.me.country);
+
+function renderSound() {
+  const b = $('#soundBtn');
+  b.setAttribute('aria-pressed', String(sound.on));
+  b.title = sound.on ? 'Sound on' : 'Sound off';
+  b.innerHTML = `<svg viewBox="0 0 20 20" width="16" height="16"><path d="M3 8v4h3l4 3V5L6 8z" fill="currentColor"/>${sound.on
+    ? '<path d="M13 7.5a3.5 3.5 0 0 1 0 5M15 5.5a6.5 6.5 0 0 1 0 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
+    : '<path d="M13 8l4 4M17 8l-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'}</svg>`;
+}
+$('#soundBtn').onclick = () => { sound.toggle(); renderSound(); };
+renderSound();
+// Every button clicks, apart from the sound switch, which clicks itself.
+document.addEventListener('click', (e) => {
+  if (e.target.closest('button:not(#soundBtn)')) sound.click();
+});
 
 function latLon(i) {
   const x = i % S.W, y = (i - x) / S.W, d = 360 / S.W;
@@ -642,20 +671,23 @@ async function clickAt(px, py) {
   if (i < 0) return;
   if (view.s < 3) {
     const p = toMap(px, py);
+    sound.click();
     flyTo(p.x, p.y, 8);
     return;
   }
-  if (!S.me) { openAuth('signup'); return; }
-  if (!S.me.admin && S.me.free + S.me.paid <= 0) { toast('You are out of pixels. Wait for the next one, or buy more.', 'bad'); return; }
+  if (!S.me) { sound.click(); openAuth('signup'); return; }
+  if (!S.me.admin && S.me.free + S.me.paid <= 0) { sound.deny(); toast('You are out of pixels. Wait for the next one, or buy more.', 'bad'); return; }
   const id = myId();
-  if (!canColor(i)) { toast(refusal(i), S.owners[i] === id ? '' : 'bad'); return; }
+  if (!canColor(i)) { sound.deny(); toast(refusal(i), S.owners[i] === id ? '' : 'bad'); return; }
   if (placing) return;
   placing = true;
+  sound.place();
   apply(i, id);
   try {
     const r = await api('/api/place', { i });
     setMe(r.me);
   } catch (e) {
+    sound.deny();
     toast(e.message, 'bad');
     if (e.data?.me) setMe(e.data.me);
     // Put back whatever the pixel is on the server.
@@ -678,7 +710,7 @@ function renderAccount() {
     el.innerHTML = `
       <button class="chip" data-act="country" title="Change country">${flagHtml(c.code)}<span class="cname">${esc(c.name)}</span><span class="muted">▾</span></button>
       <div class="chip pixels" id="pixels"></div>
-      <button class="btn" data-act="buy">Buy pixels</button>
+      <button class="btn" data-act="buy">Buy<span class="long"> pixels</span></button>
       <button class="chip user" data-act="menu" title="${esc(S.me.name)}"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="7" r="3.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 17c1-3.2 3.6-5 6.5-5s5.5 1.8 6.5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="uname">${esc(S.me.name)}</span></button>`;
     renderPixels();
   }
@@ -707,7 +739,7 @@ function renderPixels() {
     const left = Math.max(0, m.nextAt - serverNow());
     const frac = 1 - left / S.cfg.rules.regenMs;
     const mm = Math.floor(left / 60000), ss = Math.floor((left % 60000) / 1000);
-    timer = `<svg class="ring" viewBox="0 0 20 20"><circle class="track" cx="10" cy="10" r="7.5"/><circle class="fill" cx="10" cy="10" r="7.5" stroke-dasharray="47.1" stroke-dashoffset="${(47.1 * (1 - frac)).toFixed(1)}"/></svg><span class="num">+1 in ${mm}:${String(ss).padStart(2, '0')}</span><span class="label of">· ${m.free}/${m.cap}</span>`;
+    timer = `<svg class="ring" viewBox="0 0 20 20"><circle class="track" cx="10" cy="10" r="7.5"/><circle class="fill" cx="10" cy="10" r="7.5" stroke-dasharray="47.1" stroke-dashoffset="${(47.1 * (1 - frac)).toFixed(1)}"/></svg><span class="num"><span class="plus">+1 in </span>${mm}:${String(ss).padStart(2, '0')}</span><span class="label of">· ${m.free}/${m.cap}</span>`;
     if (left <= 0 && !refreshing) {
       refreshing = true;
       api('/api/me').then((r) => setMe(r.me)).catch(() => {}).finally(() => { refreshing = false; });
@@ -753,7 +785,9 @@ function renderBoard() {
 }
 $('#boardList').addEventListener('click', (e) => {
   const code = e.target.closest('[data-code]')?.dataset.code;
-  if (code) flyToCountry(code);
+  if (!code) return;
+  if (isPhone()) showBoard(false);
+  flyToCountry(code);
 });
 $('#boardToggle').addEventListener('click', (e) => {
   if (e.target.closest('[data-mode]')) {
@@ -762,10 +796,18 @@ $('#boardToggle').addEventListener('click', (e) => {
     renderBoard();
     return;
   }
+  if (isPhone()) { showBoard(false); return; }
   const b = $('#board');
   b.classList.toggle('closed');
   $('#boardToggle').setAttribute('aria-expanded', String(!b.classList.contains('closed')));
 });
+// On a phone the leaderboard is a sheet that the Countries button opens.
+const isPhone = () => matchMedia('(max-width: 720px)').matches;
+function showBoard(open) {
+  $('#board').classList.toggle('open', open);
+  $('#boardBtn').setAttribute('aria-expanded', String(open));
+}
+$('#boardBtn').onclick = () => showBoard(!$('#board').classList.contains('open'));
 function renderBoardHead() {
   $('#boardToggle').innerHTML = `<span>Countries</span><span class="online">${S.online ? `${fmt(S.online)} online · ` : ''}<span data-mode="size" class="${boardMode === 'size' ? 'strong' : ''}">${boardMode === 'size' ? '<u>size</u>' : 'size'}</span> / <span data-mode="gain">${boardMode === 'gain' ? '<u>gained</u>' : 'gained'}</span></span>`;
 }
@@ -835,7 +877,8 @@ function openAuth(mode) {
     if (m && m !== mode) openAuth(m);
   });
   if (mode === 'signup') picker($('#authPicker'), null, (code) => { country = code; });
-  $('input[name=username]', body).focus();
+  // On a phone, focusing would throw the keyboard over the form.
+  if (!matchMedia('(pointer: coarse)').matches) $('input[name=username]', body).focus();
   $('form', body).addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target;
@@ -849,6 +892,7 @@ function openAuth(mode) {
       modal.close();
       setMe(r.me);
       flyToCountry(r.me.country);
+      if (mode === 'signup') sound.chime();
       if (mode === 'signup') toast(`Welcome! You have ${r.me.free} pixels. Color the ones touching your country.`, 'good');
     } catch (ex) {
       err.textContent = ex.message;
@@ -981,6 +1025,7 @@ function showInvoice(inv) {
         wire();
         if (inv.status === 'paid') {
           clearInterval(invoicePoll);
+          sound.chime();
           toast(inv.cap ? 'Storage upgraded to 100 pixels.' : `${inv.pixels} pixels added.`, 'good');
           setMe((await api('/api/me')).me);
         }
@@ -1054,7 +1099,6 @@ async function boot() {
     await loadWorld();
     buildAll();
     Object.assign(view, { s: homeScale(), cx: S.W * 0.53, cy: S.H * 0.4 });
-    if (matchMedia('(max-width: 720px)').matches) $('#board').classList.add('closed');
     clampView();
     renderBoardHead();
     setMe(me.me);
